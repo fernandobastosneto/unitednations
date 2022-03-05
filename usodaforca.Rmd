@@ -1,0 +1,154 @@
+---
+title: "United Nations"
+author: "Fernando Bastos"
+date: "3/4/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Bailey, Michael A., Anton Strezhnev, and Erik Voeten. "Estimating dynamic state preferences from United Nations voting data." Journal of Conflict Resolution 61.2 (2017): 430-456.
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(widyr)
+
+load("data/UNVotes-1.RData")
+
+```
+
+
+```{r}
+
+usodaforca <- completeVotes |> 
+  mutate(descr = str_to_lower(descr)) |> 
+  filter(str_detect(descr, "force"))
+
+```
+
+# Quando o Brasil votou com os EUA no tema do uso da força?
+
+```{r}
+
+usodaforca |>
+  janitor::clean_names() |> 
+  filter(vote %in% c(1, 2, 3)) |> 
+  mutate(vote = vote-2) |> 
+  filter(countryname %in% c("Brazil", "United States of America")) |> 
+  select(rcid, country, vote) |> 
+  spread(country, vote, fill = 0) |> 
+  summarize(correlation = cor(BRA, USA))
+
+```
+
+# Correlação de votos do Brasil em relação a outros países. Todos os votos na UNGA.
+
+```{r}
+
+paises_importantes <- c("India", "South Africa", "China", "Russia", "Russian Federation", "United States of America", 
+                        "France", "United Kingdom", "Argentina", "Colombia", "Peru", 
+                        "Paraguay", "Uruguay", "Spain", "Portugal", "Egypt", 
+                        "Chile", "Bolivia", "Italy", "Japan", "Nigeria",
+                        "Angola", "Argelia", "Mozambique", "Mexico")
+
+df <- completeVotes |>
+  janitor::clean_names() |> 
+  filter(vote %in% c(1, 2, 3)) |> 
+  mutate(vote = vote-2) |>
+  mutate(periodo = ifelse(year < 1964, "Pré-1964",
+                          ifelse(year < 1985, "Ditadura Militar",
+                                 ifelse(year < 1989, "Sarney",
+                                        ifelse(year < 1993, "Collor",
+                                               ifelse(year < 1995, "Itamar",
+                                                      ifelse(year < 2003, "FHC",
+                                                             ifelse(year < 2011, "Lula",
+                                                                    ifelse(year < 2017, "Dilma",
+                                                                           ifelse(year < 2018, "Temer", "Bolsonaro"))))))))))
+
+periodos <- df$periodo |> 
+  unique()
+
+df <- df |> 
+  group_split(periodo)
+
+
+cor_por_governo <- map_df(1:length(df), ~ df[[.x]] |> 
+  # filter(year > 2002) |>
+  pairwise_cor(countryname, rcid, vote) |> 
+  filter(item1 == "Brazil" |  item2 == "Brazil") |> 
+  mutate(outro_pais = ifelse(item1 == "Brazil", item2, item1)) |> 
+  select(-c(item1, item2)) |>
+  distinct() |> 
+  # filter(outro_pais %in% paises_importantes) |> 
+  arrange(desc(correlation)), .id = "periodo") |> 
+  mutate(periodo = map_chr(as.numeric(periodo), ~ periodos[[.x]]))
+
+```
+
+```{r}
+p <- cor_por_governo |> 
+  mutate(periodo = factor(periodo, levels = periodos)) |>
+  # mutate(periodo = fct_reorder(periodo, periodos))
+  ggplot() +
+  geom_col(aes(correlation, tidytext::reorder_within(outro_pais, correlation, periodo),
+               fill = correlation)) +
+  facet_wrap(~ periodo, scales = "free_y", nrow = 4) +
+  tidytext::scale_y_reordered() +
+  scale_fill_gradient2(mid = "white") +
+  theme_minimal() +
+  labs(title = "Tabela de Correlação dos Votos do Brasil na AGNU (1945-2020)",
+       subtitle = " (quanto mais alto o coeficiente, mais convergente com a posição do Brasil)",
+       caption = "Fonte: Voeten, Erik; United Nations General Assembly Voting Data, Harvard Dataverse, Formulação: Fernando Bastos",
+       x = "Correlação",
+       y = NULL) +
+  theme(axis.text.y = element_text(size = 6, face = "bold"))
+
+  
+p
+
+palette <- ggthemes::ggthemes_data[["tableau"]][["color-palettes"]][["ordered-diverging"]]
+
+
+
+
+
+```
+
+# Uso da Força
+
+```{r}
+completeVotes |>
+  janitor::clean_names() |> 
+  as_tibble() |> 
+  filter(str_detect(descr, "force")) |> 
+  # count(countryname) |>
+  pairwise_cor(countryname, rcid, vote) |> 
+  filter(item1 == "Brazil" |  item2 == "Brazil") |> 
+  mutate(outro_pais = ifelse(item1 == "Brazil", item2, item1)) |> 
+  select(-c(item1, item2)) |> 
+  # distinct() |> 
+  # filter(outro_pais %in% paises_importantes) |> 
+  arrange(desc(correlation))
+
+         
+```
+
+# Votos importantes
+
+```{r}
+completeVotes |>
+  janitor::clean_names() |> 
+  as_tibble() |> 
+  filter(importantvote == 1) |> 
+  # count(year) |> View()
+  # filter(str_detect(descr, "force")) |> 
+  # count(countryname) |>
+  pairwise_cor(countryname, rcid, vote) |> 
+  filter(item1 == "Brazil" |  item2 == "Brazil") |> 
+  mutate(outro_pais = ifelse(item1 == "Brazil", item2, item1)) |> 
+  select(-c(item1, item2)) |> 
+  distinct() |>
+  filter(outro_pais %in% paises_importantes) |>
+  arrange(desc(correlation)) |> View()
+```
+
